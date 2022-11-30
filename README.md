@@ -48,12 +48,12 @@ If you find our work useful in your research, please consider citing:
 ## Installation
 
 ### Requirements
-- pytorch >= 1.8 
+- pytorch == 1.8.1 (torch-1.8.1+cu111 torchvision-0.9.1+cu111 torch_scatter-2.0.8 from https://download.pytorch.org/whl/torch_stable.html)
 - yaml
 - easydict
 - pyquaternion
 - [lightning](https://github.com/Lightning-AI/lightning) (tested with pytorch_lightning==1.3.8 and torchmetrics==0.5)
-- [torch-scatter](https://github.com/rusty1s/pytorch_scatter) (pip install torch-scatter -f https://data.pyg.org/whl/torch-1.9.0+${CUDA}.html)
+- [torch-scatter](https://github.com/rusty1s/pytorch_scatter) (pip install torch-scatter -f https://data.pyg.org/whl/torch-1.8.1%2Bcu111.html)
 - [nuScenes-devkit](https://github.com/nutonomy/nuscenes-devkit) (optional for nuScenes)
 - [spconv](https://github.com/traveller59/spconv) (tested with spconv==2.1.16 and cuda==11.1, pip install spconv-cu111==2.1.16)
 
