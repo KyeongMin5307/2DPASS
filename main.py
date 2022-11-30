@@ -7,6 +7,7 @@
 '''
 
 import os
+import sys
 import yaml
 import torch
 import datetime
@@ -130,6 +131,14 @@ def build_loader(config):
 
 
 if __name__ == '__main__':
+    file_path = sys.argv[0]
+    file_path = file_path[:len(file_path) - 8]  # '\\main.py'
+    print(f'File path changed into: {file_path}')
+    os.chdir(file_path)
+    file_path += '\\'
+    
+    os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
+
     # parameters
     configs = parse_config()
     print(configs)
@@ -149,13 +158,13 @@ if __name__ == '__main__':
     backup_dir = os.path.join(log_folder, configs.log_dir, 'backup_files_%s' % str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
     if not configs['test']:
         os.makedirs(backup_dir, exist_ok=True)
-        os.system('cp main.py {}'.format(backup_dir))
-        os.system('cp dataloader/dataset.py {}'.format(backup_dir))
-        os.system('cp dataloader/pc_dataset.py {}'.format(backup_dir))
-        os.system('cp {} {}'.format(configs.config_path, backup_dir))
-        os.system('cp network/base_model.py {}'.format(backup_dir))
-        os.system('cp network/spvcnn.py {}'.format(backup_dir))
-        os.system('cp {}.py {}'.format('network/' + configs['model_params']['model_architecture'], backup_dir))
+        os.system('copy main.py "{}"'.format(backup_dir))
+        os.system('copy dataloader/dataset.py "{}"'.format(backup_dir))
+        os.system('copy dataloader/pc_dataset.py "{}"'.format(backup_dir))
+        os.system('copy "{}" "{}"'.format(configs.config_path, backup_dir))
+        os.system('copy network/base_model.py "{}"'.format(backup_dir))
+        os.system('copy network/spvcnn.py "{}"'.format(backup_dir))
+        os.system('copy "{}".py "{}"'.format('network/' + configs['model_params']['model_architecture'], backup_dir))
 
     # reproducibility
     torch.manual_seed(configs.seed)
