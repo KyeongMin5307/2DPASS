@@ -59,6 +59,7 @@ def parse_config():
     parser.add_argument('--num_vote', type=int, default=1, help='number of voting in the test')
     parser.add_argument('--submit_to_server', action='store_true', default=False, help='submit on benchmark')
     parser.add_argument('--checkpoint', type=str, default=None, help='load checkpoint')
+    parser.add_argument('--output_dir', type=str, default=None, help='output location')
     # debug
     parser.add_argument('--debug', default=False, action='store_true')
 
@@ -227,4 +228,39 @@ if __name__ == '__main__':
                              resume_from_checkpoint=configs.checkpoint,
                              logger=tb_logger,
                              profiler=profiler)
-        trainer.test(my_model, test_dataset_loader if configs.submit_to_server else val_dataset_loader)
+
+        model = my_model.cuda().eval()
+        it = iter(val_dataset_loader)
+
+        import matplotlib.pyplot as plt
+        
+        def UnNormalize(tensor, mean, std):
+            for t, m, s in zip(tensor, mean, std):
+                t.mul_(s).add_(m)
+            return tensor
+
+        idx = 0
+        for data_dict in it:
+            for key, value in data_dict.items():
+                if type(value) is torch.Tensor:
+                    data_dict[key] = value.float().cuda()
+
+            y = model.forward(data_dict)
+
+            mask_pred = y['img'].detach().cpu().numpy()
+
+            img2 = UnNormalize(data_dict['img'], mean=[0.35675976, 0.37380189, 0.3764753], std=[0.32064945, 0.32098866, 0.32325324])
+            img2 = img2.transpose(1, 2).transpose(2, 3).detach().cpu().numpy()
+
+            for i in range(len(img2)):
+                mask_pred_bw = np.argmax(mask_pred[i], axis=0)
+
+                fig, axes = plt.subplots(2, 1)
+                axes[0].imshow(img2[i])
+                axes[1].imshow(mask_pred_bw)
+                plt.savefig(f'output/output{idx}.png')
+                plt.close(fig)
+                idx += 1
+
+        # GPU : lack of vram :(
+        # trainer.predict(my_model, test_dataset_loader if configs.submit_to_server else val_dataset_loader)
