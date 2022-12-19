@@ -133,6 +133,16 @@ python main.py --config config/2DPASS-semantickitti.yaml --gpu 0 --test --num_vo
 ```
 Here, `num_vote` is the number of views for the test-time-augmentation (TTA). We set this value to 12 as default (on a Tesla-V100 GPU), and if you use other GPUs with smaller memory, you can choose a smaller value. `num_vote=1` denotes there is no TTA used, and will cause about ~2\% performance drop.
 
+
+## Predicting
+You can run the predicting with
+```shell script
+cd <root dir of this repo>
+python main.py --config config/2DPASS-semantickitti.yaml --log_dir 2DPASS_semkitti --gpu 0 --predict --num_vote 12 --checkpoint <dir for the pytorch checkpoint>
+```
+The output will be written to `logs/SemanticKITTI/2DPASS_semkitti` by default.
+Predicting has same usage of parameter `num_vote` in Testing.
+
 ## Model Zoo
 You can download the models with the scores below from [this Google drive folder](https://drive.google.com/drive/folders/1Xy6p_h827lv8J-2iZU8T6SLFkxfoXPBE?usp=sharing).
 |Model (validation)|Reported (mIoU)|Reproduced (mIoU)|Parameters|

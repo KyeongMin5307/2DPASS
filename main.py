@@ -13,6 +13,7 @@ import torch
 import datetime
 import importlib
 import numpy as np
+import matplotlib.pyplot as pyplot
 import pytorch_lightning as pl
 
 from easydict import EasyDict
@@ -59,7 +60,8 @@ def parse_config():
     parser.add_argument('--num_vote', type=int, default=1, help='number of voting in the test')
     parser.add_argument('--submit_to_server', action='store_true', default=False, help='submit on benchmark')
     parser.add_argument('--checkpoint', type=str, default=None, help='load checkpoint')
-    parser.add_argument('--output_dir', type=str, default=None, help='output location')
+    # predict
+    parser.add_argument('--predict', action='store_true', default=False, help='predict mode')
     # debug
     parser.add_argument('--debug', default=False, action='store_true')
 
@@ -68,7 +70,7 @@ def parse_config():
     config.update(vars(args))  # override the configuration using the value in args
 
     # voting test
-    if args.test:
+    if args.test or args.predict:
         config['dataset_params']['val_data_loader']['batch_size'] = args.num_vote
     if args.num_vote > 1:
         config['dataset_params']['val_data_loader']['rotate_aug'] = True
@@ -87,7 +89,7 @@ def build_loader(config):
     val_config = config['dataset_params']['val_data_loader']
     train_dataset_loader, val_dataset_loader, test_dataset_loader = None, None, None
 
-    if not config['test']:
+    if not config['test'] and not config['predict']:
         train_pt_dataset = pc_dataset(config, data_path=train_config['data_path'], imageset='train')
         val_pt_dataset = pc_dataset(config, data_path=val_config['data_path'], imageset='val')
         train_dataset_loader = torch.utils.data.DataLoader(
@@ -132,12 +134,14 @@ def build_loader(config):
 
 
 if __name__ == '__main__':
+    # redirect working directory
     file_path = sys.argv[0]
     file_path = file_path[:len(file_path) - 8]  # '\\main.py'
     print(f'File path changed into: {file_path}')
     os.chdir(file_path)
     file_path += '\\'
     
+    # windows pytorch options
     os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
 
     # parameters
@@ -187,7 +191,7 @@ if __name__ == '__main__':
 
     if configs.checkpoint is not None:
         print('load pre-trained model...')
-        if configs.fine_tune or configs.test or configs.pretrain2d:
+        if configs.fine_tune or configs.test or configs.predict or configs.pretrain2d:
             my_model = my_model.load_from_checkpoint(configs.checkpoint, config=configs, strict=(not configs.pretrain2d))
         else:
             # continue last training
@@ -198,7 +202,7 @@ if __name__ == '__main__':
     else:
         swa = []
 
-    if not configs.test:
+    if not configs.test and not configs.predict:
         # init trainer
         print('Start training...')
         trainer = pl.Trainer(gpus=[i for i in range(num_gpu)],
@@ -219,8 +223,8 @@ if __name__ == '__main__':
                              accumulate_grad_batches=1
                              )
         trainer.fit(my_model, train_dataset_loader, val_dataset_loader)
-
-    else:
+        
+    elif not configs.predict: # Test
         print('Start testing...')
         assert num_gpu == 1, 'only support single GPU testing!'
         trainer = pl.Trainer(gpus=[i for i in range(num_gpu)],
@@ -228,39 +232,65 @@ if __name__ == '__main__':
                              resume_from_checkpoint=configs.checkpoint,
                              logger=tb_logger,
                              profiler=profiler)
-
-        model = my_model.cuda().eval()
-        it = iter(val_dataset_loader)
-
-        import matplotlib.pyplot as plt
+        trainer.test(my_model, test_dataset_loader if configs.submit_to_server else val_dataset_loader)
         
+    else:
+        print('Start predicting...')
+        # Lack of GPU VRAM :(
+        '''
+        assert num_gpu == 1, 'only support single GPU testing!'
+        trainer = pl.Trainer(gpus=[i for i in range(num_gpu)],
+                             accelerator='ddp',
+                             resume_from_checkpoint=configs.checkpoint,
+                             logger=tb_logger,
+                             profiler=profiler)
+        trainer.predict(my_model, test_dataset_loader if configs.submit_to_server else val_dataset_loader)
+        '''
+        # save the backup files
+        output_dir = os.path.join(log_folder, configs.log_dir, 'output_%s' % str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
+        os.makedirs(output_dir, exist_ok=True);
+        
+        # Load SPVCNN in GPU
+        model = my_model.cuda().eval()
+        
+        # Load test data
+        it = iter(val_dataset_loader)
+        
+        # Unnormalization function
         def UnNormalize(tensor, mean, std):
             for t, m, s in zip(tensor, mean, std):
                 t.mul_(s).add_(m)
             return tensor
 
+        # Predicting
         idx = 0
         for data_dict in it:
             for key, value in data_dict.items():
                 if type(value) is torch.Tensor:
+                    # Move tensor to GPU
                     data_dict[key] = value.float().cuda()
 
+            # Do forward
             y = model.forward(data_dict)
 
+            # Move 'img' in prediction to CPU
             mask_pred = y['img'].detach().cpu().numpy()
 
+            # Unnormalize the original image and realign the axis of image matrix
             img2 = UnNormalize(data_dict['img'], mean=[0.35675976, 0.37380189, 0.3764753], std=[0.32064945, 0.32098866, 0.32325324])
             img2 = img2.transpose(1, 2).transpose(2, 3).detach().cpu().numpy()
 
+            # Print all contained image
             for i in range(len(img2)):
+                # Classify each index with semantic score (with highest)
                 mask_pred_bw = np.argmax(mask_pred[i], axis=0)
 
-                fig, axes = plt.subplots(2, 1)
+                # Print
+                fig, axes = pyplot.subplots(2, 1, figsize=(5, 7))
                 axes[0].imshow(img2[i])
                 axes[1].imshow(mask_pred_bw)
-                plt.savefig(f'output/output{idx}.png')
-                plt.close(fig)
+                
+                pyplot.savefig(f'{output_dir}/output{idx}.png')
+                pyplot.close(fig)
+                
                 idx += 1
-
-        # GPU : lack of vram :(
-        # trainer.predict(my_model, test_dataset_loader if configs.submit_to_server else val_dataset_loader)
